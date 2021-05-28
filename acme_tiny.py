@@ -1,10 +1,10 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # Copyright Daniel Roesler, under MIT license, see LICENSE at github.com/diafygi/acme-tiny
-import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
-try:
-    from urllib.request import urlopen, Request # Python 3
-except ImportError:
-    from urllib2 import urlopen, Request # Python 2
+# this version is edited to process  email challenge and email only
+# this was edited to not verity CA's certificate, so use with care
+import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging, ssl
+import acmemail
+from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD
 DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
@@ -13,7 +13,7 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
-def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None):
+def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_DIRECTORY_URL, contact=None):
     directory, acct_headers, alg, jwk = None, None, None, None # global variables
 
     # helper functions - base64 encode for jose spec
@@ -31,7 +31,7 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
     # helper function - make request and automatically parse json response
     def _do_request(url, data=None, err_msg="Error", depth=0):
         try:
-            resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}))
+            resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}), context=ssl.SSLContext())
             resp_data, code, headers = resp.read().decode("utf8"), resp.getcode(), resp.headers
         except IOError as e:
             resp_data = e.read().decode("utf8") if hasattr(e, "read") else str(e)
@@ -68,6 +68,7 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
             assert (time.time() - t0 < 3600), "Polling timeout" # 1 hour timeout
             time.sleep(0 if result is None else 2)
             result, _, _ = _send_signed_request(url, None, err_msg)
+            log.info("result: {0}".format(result))
         return result
 
     # parse account key to get public key
@@ -86,19 +87,19 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
     accountkey_json = json.dumps(jwk, sort_keys=True, separators=(',', ':'))
     thumbprint = _b64(hashlib.sha256(accountkey_json.encode('utf8')).digest())
 
-    # find domains
+    # find emails
     log.info("Parsing CSR...")
     out = _cmd(["openssl", "req", "-in", csr, "-noout", "-text"], err_msg="Error loading {0}".format(csr))
-    domains = set([])
+    emails = set([])
     common_name = re.search(r"Subject:.*? CN\s?=\s?([^\s,;/]+)", out.decode('utf8'))
     if common_name is not None:
-        domains.add(common_name.group(1))
+        emails.add(common_name.group(1))
     subject_alt_names = re.search(r"X509v3 Subject Alternative Name: (?:critical)?\n +([^\n]+)\n", out.decode('utf8'), re.MULTILINE|re.DOTALL)
     if subject_alt_names is not None:
         for san in subject_alt_names.group(1).split(", "):
-            if san.startswith("DNS:"):
-                domains.add(san[4:])
-    log.info("Found domains: {0}".format(", ".join(domains)))
+            if san.startswith("email:"):
+                emails.add(san[6:])
+    log.info("Found emails: {0}".format(", ".join(emails)))
 
     # get the ACME directory of urls
     log.info("Getting directory...")
@@ -117,7 +118,7 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
 
     # create a new order
     log.info("Creating new order...")
-    order_payload = {"identifiers": [{"type": "dns", "value": d} for d in domains]}
+    order_payload = {"identifiers": [{"type": "email", "value": d} for d in emails]}
     order, _, order_headers = _send_signed_request(directory['newOrder'], order_payload, "Error creating new order")
     log.info("Order created!")
 
@@ -127,27 +128,22 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
         domain = authorization['identifier']['value']
         log.info("Verifying {0}...".format(domain))
 
-        # find the http-01 challenge and write the challenge file
-        challenge = [c for c in authorization['challenges'] if c['type'] == "http-01"][0]
-        token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
-        keyauthorization = "{0}.{1}".format(token, thumbprint)
-        wellknown_path = os.path.join(acme_dir, token)
-        with open(wellknown_path, "w") as wellknown_file:
-            wellknown_file.write(keyauthorization)
-
-        # check that the file is in place
-        try:
-            wellknown_url = "http://{0}/.well-known/acme-challenge/{1}".format(domain, token)
-            assert (disable_check or _do_request(wellknown_url)[0] == keyauthorization)
-        except (AssertionError, ValueError) as e:
-            raise ValueError("Wrote file to {0}, but couldn't download {1}: {2}".format(wellknown_path, wellknown_url, e))
-
+        # find the email-reply-00 challenge and write the challenge file
+        challenge = [c for c in authorization['challenges'] if c['type'] == "email-reply-00"][0]
+        token_part2 = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
+        token_part1 = input("please enter token_part1 sent from server by email in ACME:/{token_part1/}")
+        keyauthorization = "{0}{1}.{2}".format(token_part1,token_part2, thumbprint)
+        keyauthdigest = _b64(hashlib.sha256(keyauthorization.encode('utf-8')).digest())
+        log.info("-----BEGIN ACME RESPONSE-----")
+        log.info(f'{keyauthdigest}')
+        log.info("-----END ACME RESPONSE-----")
+        input('{please send email to acme server using this keyauthdigest')
+        
         # say the challenge is done
         _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
         authorization = _poll_until_not(auth_url, ["pending"], "Error checking challenge status for {0}".format(domain))
         if authorization['status'] != "valid":
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
-        os.remove(wellknown_path)
         log.info("{0} verified!".format(domain))
 
     # finalize the order with the csr
@@ -182,16 +178,14 @@ def main(argv=None):
     )
     parser.add_argument("--account-key", required=True, help="path to your Let's Encrypt account private key")
     parser.add_argument("--csr", required=True, help="path to your certificate signing request")
-    parser.add_argument("--acme-dir", required=True, help="path to the .well-known/acme-challenge/ directory")
     parser.add_argument("--quiet", action="store_const", const=logging.ERROR, help="suppress output except for errors")
-    parser.add_argument("--disable-check", default=False, action="store_true", help="disable checking if the challenge file is hosted correctly before telling the CA")
     parser.add_argument("--directory-url", default=DEFAULT_DIRECTORY_URL, help="certificate authority directory url, default is Let's Encrypt")
     parser.add_argument("--ca", default=DEFAULT_CA, help="DEPRECATED! USE --directory-url INSTEAD!")
     parser.add_argument("--contact", metavar="CONTACT", default=None, nargs="*", help="Contact details (e.g. mailto:aaa@bbb.com) for your account-key")
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact)
+    signed_crt = get_crt(args.account_key, args.csr, log=LOGGER, CA=args.ca, directory_url=args.directory_url, contact=args.contact)
     sys.stdout.write(signed_crt)
 
 if __name__ == "__main__": # pragma: no cover

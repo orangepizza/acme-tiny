@@ -55,3 +55,12 @@ docs/_build/
 
 # PyBuilder
 target/
+
+# Users key
+*.pem
+*.crt
+*.key
+
+# Configs
+*.ini
+!exempleconfig.ini
