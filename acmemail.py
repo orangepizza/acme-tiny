@@ -6,15 +6,21 @@ from email.header import decode_header
 import smtplib, imaplib
 import configparser, ssl
 from pathlib import Path
-from types import resolve_bases
-#import dkimpy
+#try import dkimpy for dkim check
+dkimpyexsit = True
+try:
+    import dkim
+except ImportError:
+    dkimpyexsit = False
 
 def checkmailsign(mail:bytes):
-    #Todo: impliment this
-    #first try smime
-    if True:
-        return True
-    return True
+    # return early if dkim verified, if not imported it will pass
+    if dkimpyexsit == False:
+        if dkim.verify(mail):
+            return True
+    #TODO actually check need header that must be signed by RFC8823
+
+    return False
 
 
 #ssl mode (explict, starttls, none)
