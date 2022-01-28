@@ -3,6 +3,8 @@
 # this version is edited to process  email challenge and email only
 # this was edited to not verity CA's certificate, so use with care
 import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging, ssl
+import configparser
+from importlib.resources import path
 import acmemail
 from urllib.request import urlopen, Request # Python 3
 
@@ -128,15 +130,20 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
         domain = authorization['identifier']['value']
         log.info("Verifying {0}...".format(domain))
 
+        #load config file for acmemail
+        mailconfig = configparser.ConfigParser()
+        mailconfig.read(f"{auth_url}.cfg")
         # find the email-reply-00 challenge and write the challenge file
         challenge = [c for c in authorization['challenges'] if c['type'] == "email-reply-00"][0]
         token_part2 = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
-        token_part1 = input("please enter token_part1 sent from server by email in ACME:/{token_part1/}")
+        # wait 30 seconds to mail to alive
+        time.sleep(30)
+        subject, replyto, msgid = acmemail.getmailtoken(mailconfig,challenge['from'], False)
+        token_part1 = subject[6::]
         keyauthorization = "{0}{1}.{2}".format(token_part1,token_part2, thumbprint)
         keyauthdigest = _b64(hashlib.sha256(keyauthorization.encode('utf-8')).digest())
-        log.info("-----BEGIN ACME RESPONSE-----")
         log.info(f'{keyauthdigest}')
-        log.info("-----END ACME RESPONSE-----")
+        #actually list mailserver test
         input('{please send email to acme server using this keyauthdigest')
         
         # say the challenge is done

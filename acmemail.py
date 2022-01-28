@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+from asyncio import open_connection
 import email
 from email import message, utils
 from email.policy import Policy
@@ -95,6 +96,14 @@ def fetchmailtoken(connection: imaplib.IMAP4, mailfrom: str, verifysign = False)
         #Keep mind subject still has ACME: header attached
         return subject,replyto,messageid
     # if we reach here there was no valid mail from CA, so we sleep and restart
+
+def getmailtoken(cfg:configparser.configparser, servermailadr, verifysign: bool):
+    with open_imap_connection(cfg, verbose=True) as cnt:
+        mailforchallange = config['DEFAULT']["mailaddress"]
+        #mailname
+        print(cd)
+        subject, replyto, msgid = fetchmailtoken(cd, servermailadr,verifysign)
+    return subject, replyto, msgid
 
 def sendmail(config:configparser.ConfigParser, mailtosend:message.EmailMessage):
     #connect to server
