@@ -122,7 +122,8 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
     log.info("Creating new order...")
     order_payload = {"identifiers": [{"type": "email", "value": d} for d in emails]}
     order, _, order_headers = _send_signed_request(directory['newOrder'], order_payload, "Error creating new order")
-    log.info("Order created!")
+    log.info("Order created!, wait 30sec to acme server sent mail")
+    time.sleep(30)
 
     # get the authorizations that need to be completed
     for auth_url in order['authorizations']:
@@ -136,8 +137,6 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
         # find the email-reply-00 challenge and write the challenge file
         challenge = [c for c in authorization['challenges'] if c['type'] == "email-reply-00"][0]
         token_part2 = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
-        # wait 30 seconds to mail to alive
-        time.sleep(30)
         subject, replyto, msgid = acmemail.getmailtoken(mailconfig,challenge['from'], False)
         token_part1 = subject[6::]
         keyauthorization = "{0}{1}.{2}".format(token_part1,token_part2, thumbprint)
