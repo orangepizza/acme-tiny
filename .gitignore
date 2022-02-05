@@ -63,4 +63,5 @@ target/
 
 # Configs
 *.ini
-!exempleconfig.ini
+*.cfg
+!exemple.cfg

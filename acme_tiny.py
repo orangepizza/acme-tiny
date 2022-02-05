@@ -34,6 +34,7 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
     def _do_request(url, data=None, err_msg="Error", depth=0):
         try:
             resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}), context=ssl.SSLContext())
+            #Warning that this disabled CA certificate test 
             resp_data, code, headers = resp.read().decode("utf8"), resp.getcode(), resp.headers
         except IOError as e:
             resp_data = e.read().decode("utf8") if hasattr(e, "read") else str(e)
@@ -92,11 +93,14 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
     # find emails
     log.info("Parsing CSR...")
     out = _cmd(["openssl", "req", "-in", csr, "-noout", "-text"], err_msg="Error loading {0}".format(csr))
+    outtext = out.decode("utf8")
+    outtext = outtext.replace("\r\n","\n") #lineend standarize
     emails = set([])
-    common_name = re.search(r"Subject:.*? CN\s?=\s?([^\s,;/]+)", out.decode('utf8'))
-    if common_name is not None:
-        emails.add(common_name.group(1))
-    subject_alt_names = re.search(r"X509v3 Subject Alternative Name: (?:critical)?\n +([^\n]+)\n", out.decode('utf8'), re.MULTILINE|re.DOTALL)
+    common_name = re.search(r"Subject:.*? CN\s?=\s?([^\s,;/]+)", outtext)
+    #email certs doesn't use commonname
+    #if common_name is not None:
+    #    emails.add(common_name.group(1))
+    subject_alt_names = re.search(r"X509v3 Subject Alternative Name: (?:critical)?\n +([^\n]+)\n", outtext, re.MULTILINE|re.DOTALL)
     if subject_alt_names is not None:
         for san in subject_alt_names.group(1).split(", "):
             if san.startswith("email:"):
@@ -122,8 +126,8 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
     log.info("Creating new order...")
     order_payload = {"identifiers": [{"type": "email", "value": d} for d in emails]}
     order, _, order_headers = _send_signed_request(directory['newOrder'], order_payload, "Error creating new order")
-    log.info("Order created!, wait 30sec to acme server sent mail")
-    time.sleep(30)
+    log.info("Order created!, wait 10sec to acme server sent mail")
+    time.sleep(10)
 
     # get the authorizations that need to be completed
     for auth_url in order['authorizations']:
@@ -133,7 +137,7 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
 
         #load config file for acmemail
         mailconfig = configparser.ConfigParser()
-        mailconfig.read(f"{auth_url}.cfg")
+        mailconfig.read(f"{domain}.cfg")
         # find the email-reply-00 challenge and write the challenge file
         challenge = [c for c in authorization['challenges'] if c['type'] == "email-reply-00"][0]
         token_part2 = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
@@ -143,8 +147,10 @@ def get_crt(account_key, csr, log=LOGGER, CA=DEFAULT_CA, directory_url=DEFAULT_D
         keyauthdigest = _b64(hashlib.sha256(keyauthorization.encode('utf-8')).digest())
         log.info(f'{keyauthdigest}')
         #actually list mailserver test
-        input('{please send email to acme server using this keyauthdigest')
-        
+        chalanswer = acmemail.craftmail(token_part1,keyauthdigest,replyto,msgid,domain)
+        acmemail.sendmail(mailconfig,chalanswer)
+        time.sleep(10)#wait until acme server get mail
+
         # say the challenge is done
         _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
         authorization = _poll_until_not(auth_url, ["pending"], "Error checking challenge status for {0}".format(domain))

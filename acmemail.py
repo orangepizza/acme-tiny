@@ -40,7 +40,7 @@ def open_imap_connection(config: configparser.ConfigParser,verbose=False):
             print('opens plaintext connection to')
         connection = imaplib.IMAP4(hostname,port)
         # if starttls we start tls here
-        if str.upper(config['tlsmod']) == "starttls":
+        if str.lower(tlsmod) == "starttls":
             ok, _ = connection.starttls(context)
             if ok != 'OK':
                 print("error starting starttls")
@@ -94,19 +94,18 @@ def fetchmailtoken(connection: imaplib.IMAP4, mailfrom: str, verifysign = False)
         messageid = parsedmsg['message-id']
         print(subject, "\nreplyto\n",replyto,"\nmessageid\n",messageid)
         #Keep mind subject still has ACME: header attached
-        return subject,replyto,messageid
+        return subject, replyto, messageid
     # if we reach here there was no valid mail from CA, so we sleep and restart
 
-def getmailtoken(cfg:configparser.configparser, servermailadr, verifysign: bool):
+def getmailtoken(cfg:configparser.ConfigParser, servermailadr, verifysign: bool):
     with open_imap_connection(cfg, verbose=True) as cnt:
-        mailforchallange = config['DEFAULT']["mailaddress"]
+        mailforchallange = cfg['DEFAULT']["mailaddress"]
         #mailname
-        print(cd)
-        subject, replyto, msgid = fetchmailtoken(cd, servermailadr,verifysign)
-    return subject, replyto, msgid
+        return fetchmailtoken(cnt, servermailadr,verifysign)
 
 def sendmail(config:configparser.ConfigParser, mailtosend:message.EmailMessage):
     #connect to server
+    print('try to send mail')
     smtpconfig = config['smtp']
     server = None
     if smtpconfig["tlsmod"] != "TLS":
@@ -118,19 +117,20 @@ def sendmail(config:configparser.ConfigParser, mailtosend:message.EmailMessage):
         server = smtplib.SMTP_SSL(smtpconfig["hostname"],smtpconfig["port"], context= ssl.create_default_context())
     #try login now
     server.login(smtpconfig["username"],smtpconfig["password"])
-    server.send_message(mailtosend)
+    iferr = server.send_message(mailtosend)
+    print(iferr)
     return True
 
 #sendmail return true when it could send mail, otherwise it fails
 
 #craft email object from needed info, keep mine caller of this function has to craft the reponse digest.
-def craftmail(challangename:str,responsedigest:str, reply_to_address:str, message_id, From:str):
+def craftmail(token_part1:str,responsedigest:str, reply_to_address:str, message_id, From:str):
     mailtosend = message.EmailMessage()
     mailtosend["In-Reply-To"] = message_id
-    if "ACME: " in challangename: #if subject already has ACME: header, use as-is.
-        mailtosend["Subject"] = challangename
+    if "ACME: " in token_part1: #if subject already has ACME: header, use as-is.
+        mailtosend["Subject"] = token_part1
     else: #if client sends raw token-part1 as challangename, we add ACME: header to it
-        mailtosend["Subject"] = f"ACME: {challangename}"
+        mailtosend["Subject"] = f"ACME: {token_part1}"
     mailtosend["From"] = From
     mailtosend["to"] = reply_to_address
     mailtosend["date"] = utils.localtime()
