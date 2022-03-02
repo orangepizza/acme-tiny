@@ -86,6 +86,8 @@ def fetchmailtoken(connection: imaplib.IMAP4, mailfrom: str, verifysign = False)
     if typ != "OK":
         print(f"there was Error in serch {searchresult}")
     maillist = searchresult[0].split()
+    if len(maillist) > 1:
+        print("we have multiple acme chalange mail in inbox that can't distinguish")
     for num in maillist:
         connection.store(num, '+FLAGS', '\Seen')
         typ, msg = connection.fetch(num, '(RFC822)')
