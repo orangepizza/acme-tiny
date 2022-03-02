@@ -61,16 +61,33 @@ def open_imap_connection(config: configparser.ConfigParser,verbose=False):
         print(f"can't access inbox,{status},{answer}")
     return connection
 
+#this function flushes all mail start with ACME: header and mark all such mail as read
+# so we won't have old unseen ACME related mail
+# if delete parameter is true, it will delete it from mailbox too.
+def flushchallangemail(connection: imaplib.IMAP4, delete:bool = False):
+    typ, sr = connection.search(None, 'UNSEEN Subject "ACME: "')
+    if typ != "OK":
+        return False
+    ml = sr[0].split()
+    for n in ml:
+        connection.store(n, '+FLAGS', '\Seen')
+        if delete:
+            connection.store(n, '+FLAGS', '\\Delete')
+    if delete:
+        connection.expunge()
+    return True
+
 
 #we need three thing challange email: subject(token_part1), reply-to, message-id for SHOULD be set for In-Reply-To
 #mailforchalange should be mail address of ACME server
 def fetchmailtoken(connection: imaplib.IMAP4, mailfrom: str, verifysign = False):
     #search from IMAP server by FROM and have ACME: in subject which given by CA
-    typ, searchresult = connection.search(None, f'FROM "{mailfrom}" Subject "ACME: "')
+    typ, searchresult = connection.search(None, f'UNSEEN FROM "{mailfrom}" Subject "ACME: "')
     if typ != "OK":
         print(f"there was Error in serch {searchresult}")
     maillist = searchresult[0].split()
     for num in maillist:
+        connection.store(num, '+FLAGS', '\Seen')
         typ, msg = connection.fetch(num, '(RFC822)')
         if typ != "OK":
             #try downloading once again:
