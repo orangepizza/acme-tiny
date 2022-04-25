@@ -1,0 +1,19 @@
+-----BEGIN CERTIFICATE REQUEST-----
+MIIBDzCBwgIBADAAMCowBQYDK2VwAyEAAJhHmOIxin7dZvKd6aiZGCNrl2ngSbR1
+1Ei727ydOEaggY4wFAYEZ4EMKjEMBAosNiTQxXU35ZAqMBoGBGeBDCkxEgQQYpVw
+QRzcyq72eWGTw8flMjBaBgkqhkiG9w0BCQ4xTTBLMEkGA1UdEQRCMECCPmFjbWVw
+Z2hjZ2dmaDV4bGc2a282dGtlemRhcnd4ZjNqNGJlM2k1b3VqYzU1eHBlNWhiZGph
+dXFkLm9uaW9uMAUGAytlcANBACfTi2BHuRhWP+UHJ75zz/Vh2HNj7A97Jeq/JDyN
+EMSC/YZWhP+vFEdveAzWgi3IBDNCkJpp09HbDhyJNgfNvw8=
+-----END CERTIFICATE REQUEST-----
+
+
+
+# tor private key is a + RH
+def signfromtorkey(m, tsk, pk):
+  a = tsk[:32]
+  r = Hint("".join(tsk[i] for i in range(b//8,b//4) + m))
+  R = scalarmult(B,r)
+  S = (r + Hint(encodepoint(R) + pk + m) * a) % l
+  return encodepoint(R) + encodeint(S)    
+  
