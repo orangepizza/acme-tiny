@@ -26,12 +26,6 @@ def char_pointer_cast(string, encoding='utf-8'):
     string = ctypes.c_char_p(string)
     return ctypes.cast(string, ctypes.POINTER(ctypes.c_char))
 
-def ubyte_array_cast(inbytes):
-    buffer = (ctypes.c_ubyte * len(bytes))(*inbytes)
-    return buffer
-
-def ubyte_ptr_to_bytes(ptr, len:int):
-    return bytearray(ptr)
 
 libname = "libed25519.so"
 libpath = os.path.dirname(__file__) + os.path.sep + libname
@@ -82,3 +76,30 @@ def sign(message:bytes, publickey:bytes, privatekey:bytes):
     cpriv = (ctypes.c_ubyte * 64).from_buffer_copy(privatekey)
     ed25519_sign(csig, cmessage, size_t(len(message)), cpub, cpriv)
     return pysig
+
+
+def add_scalar(publickey:bytes, privatekey:bytes, scalar:bytes):
+    if len(publickey) != 32:
+        raise("wrong pubkey size")
+    if len(privatekey) != 64:
+        raise("wrong privatekey size: this library expects 64bytes expended form")
+    if len(scalar) != 32:
+        raise("wrong scala size")
+    rpublickey = bytearray(publickey)
+    rprivatekey = bytearray(privatekey)
+    
+    cpub = (ctypes.c_ubyte * 32).from_buffer(rpublickey)
+    cpriv = (ctypes.c_ubyte * 64).from_buffer(rprivatekey)
+    scalar = (ctypes.c_ubyte * 32).from_buffer_copy(scalar)
+    
+    ed25519_add_scalar(cpub, cpriv, scalar)
+    return bytes(rpublickey), bytes(rprivatekey)
+
+
+def key_exchange(public_key, private_key):
+    shared_secret = bytearray(32)
+    c_ss = (ctypes.c_ubyte * 32).from_buffer(shared_secret)
+    cpub = (ctypes.c_ubyte * 32).from_buffer_copy(public_key)
+    cpriv = (ctypes.c_ubyte * 64).from_buffer_copy(private_key)
+    ed25519_key_exchange(c_ss, cpub, cpriv)
+    return shared_secret
