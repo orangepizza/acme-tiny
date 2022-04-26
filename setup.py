@@ -1,5 +1,10 @@
 from setuptools import setup
 
+install_requires = [
+    'cryptography >= 37.0.0',
+    
+]
+
 setup(
     name="acme-tiny",
     use_scm_version=True,

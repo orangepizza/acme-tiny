@@ -4,10 +4,9 @@ import os
 import hashlib
 from ed25519 import ed25519 as ced25519
 import cryptography.x509 as pyx509
-from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
 from cryptography.x509.name import _ASN1Type
-from stem.descriptor import hidden_service
 # csr crafting
 from cryptography.x509.oid import NameOID
 
@@ -47,11 +46,7 @@ def CraftCSRwithTorkey(name, privkey: bytes, publickey: bytes, nonce: bytes):
     tbsbyte = tmpcsr.tbs_certrequest_bytes
 
     # sanity check
-    keyname = (
-        hidden_service.HiddenServiceDescriptorV3.address_from_identity_key(
-            ed25519.Ed25519PublicKey.from_public_bytes(publickey)
-            )
-        )
+    keyname = OnionNameFromPubkey(pubkey)
     if name != keyname:
         print("onion name didn't match publickey given")
     # replace temp key in csr to real key and sig
