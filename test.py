@@ -1,7 +1,4 @@
 import base64
-from msilib.schema import Directory
-from os import lseek
-import asn1crypto, asn1crypto.core, asn1crypto.pem, asn1crypto.csr, asn1crypto.x509
 import cryptography.x509
 from cryptography.hazmat.primitives import serialization, hashes, asymmetric
 import cryptography.utils, cryptography.hazmat.primitives.asymmetric

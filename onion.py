@@ -23,7 +23,7 @@ def ReadOnionSite(onionsitefolder="/var/lib/tor/hidden_service"):
     with open(os.path.join(onionsitefolder, "hs_ed25519_public_key"), "rb") as f:
         keyfile = f.read()
         pkeybytes = keyfile[32:]
-    with open(f"{onionsitefolder}/hostname", "r", encoding="utf-8") as f:
+    with open(os.path.join(onionsitefolder, "hostname"), "r", encoding="utf-8") as f:
         onionname = f.read()
         onionname = onionname.strip()
     return onionname, skeybytes, pkeybytes
