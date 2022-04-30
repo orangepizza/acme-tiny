@@ -13,41 +13,42 @@ LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
 
+# helper functions - base64 encode for jose spec
+def _b64(b):
+    return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
+
+# helper function - run external commands
+def _cmd(cmd_list, stdin=None, cmd_input=None, err_msg="Command Line Error"):
+    proc = subprocess.Popen(cmd_list, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out, err = proc.communicate(cmd_input)
+    if proc.returncode != 0:
+        raise IOError("{0}\n{1}".format(err_msg, err))
+    return out
+
+# helper function - make request and automatically parse json response
+def _do_request(url, data=None, err_msg="Error", depth=0):
+    try:
+        freecontext = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+        freecontext.check_hostname = False
+        freecontext.verify_mode = ssl.CERT_NONE
+        resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}), context= freecontext)
+        resp_data, code, headers = resp.read().decode("utf8"), resp.getcode(), resp.headers
+    except IOError as e:
+        resp_data = e.read().decode("utf8") if hasattr(e, "read") else str(e)
+        code, headers = getattr(e, "code", None), {}
+    try:
+        resp_data = json.loads(resp_data) # try to parse json results
+    except ValueError:
+        pass # ignore json parsing errors
+    if depth < 100 and code == 400 and resp_data['type'] == "urn:ietf:params:acme:error:badNonce":
+        raise IndexError(resp_data) # allow 100 retrys for bad nonces
+    if code not in [200, 201, 204]:
+        raise ValueError("{0}:\nUrl: {1}\nData: {2}\nResponse Code: {3}\nResponse: {4}".format(err_msg, url, data, code, resp_data))
+    return resp_data, code, headers
+
 def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None):
     directory, acct_headers, alg, jwk = None, None, None, None # global variables
 
-    # helper functions - base64 encode for jose spec
-    def _b64(b):
-        return base64.urlsafe_b64encode(b).decode('utf8').replace("=", "")
-
-    # helper function - run external commands
-    def _cmd(cmd_list, stdin=None, cmd_input=None, err_msg="Command Line Error"):
-        proc = subprocess.Popen(cmd_list, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        out, err = proc.communicate(cmd_input)
-        if proc.returncode != 0:
-            raise IOError("{0}\n{1}".format(err_msg, err))
-        return out
-
-    # helper function - make request and automatically parse json response
-    def _do_request(url, data=None, err_msg="Error", depth=0):
-        try:
-            freecontext = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
-            freecontext.check_hostname = False
-            freecontext.verify_mode = ssl.CERT_NONE
-            resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}), context= freecontext)
-            resp_data, code, headers = resp.read().decode("utf8"), resp.getcode(), resp.headers
-        except IOError as e:
-            resp_data = e.read().decode("utf8") if hasattr(e, "read") else str(e)
-            code, headers = getattr(e, "code", None), {}
-        try:
-            resp_data = json.loads(resp_data) # try to parse json results
-        except ValueError:
-            pass # ignore json parsing errors
-        if depth < 100 and code == 400 and resp_data['type'] == "urn:ietf:params:acme:error:badNonce":
-            raise IndexError(resp_data) # allow 100 retrys for bad nonces
-        if code not in [200, 201, 204]:
-            raise ValueError("{0}:\nUrl: {1}\nData: {2}\nResponse Code: {3}\nResponse: {4}".format(err_msg, url, data, code, resp_data))
-        return resp_data, code, headers
 
     # helper function - make signed requests
     def _send_signed_request(url, payload, err_msg, depth=0):
