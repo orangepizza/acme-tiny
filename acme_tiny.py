@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Copyright Daniel Roesler, under MIT license, see LICENSE at github.com/diafygi/acme-tiny
 import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
-try:
-    from urllib.request import urlopen, Request # Python 3
-except ImportError: # pragma: no cover
-    from urllib2 import urlopen, Request # Python 2
+import ssl
+
+import onion
+from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD
-DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
-
+#DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
+DEFAULT_DIRECTORY_URL = "https://192.168.1.123:14000/dir"
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
@@ -31,7 +31,10 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
     # helper function - make request and automatically parse json response
     def _do_request(url, data=None, err_msg="Error", depth=0):
         try:
-            resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}))
+            freecontext = ssl.create_default_context(ssl.Purpose.SERVER_AUTH)
+            freecontext.check_hostname = False
+            freecontext.verify_mode = ssl.CERT_NONE
+            resp = urlopen(Request(url, data=data, headers={"Content-Type": "application/jose+json", "User-Agent": "acme-tiny"}), context= freecontext)
             resp_data, code, headers = resp.read().decode("utf8"), resp.getcode(), resp.headers
         except IOError as e:
             resp_data = e.read().decode("utf8") if hasattr(e, "read") else str(e)
@@ -116,7 +119,7 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
 
     # create a new order
     log.info("Creating new order...")
-    order_payload = {"identifiers": [{"type": "dns", "value": d} for d in domains]}
+    order_payload = {"identifiers": [{"type": "onion-v3", "value": d} for d in domains]}
     order, _, order_headers = _send_signed_request(directory['newOrder'], order_payload, "Error creating new order")
     log.info("Order created!")
 
@@ -132,26 +135,19 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
         log.info("Verifying {0}...".format(domain))
 
         # find the http-01 challenge and write the challenge file
-        challenge = [c for c in authorization['challenges'] if c['type'] == "http-01"][0]
+        challenge = [c for c in authorization['challenges'] if c['type'] == "onion-v3-csr"][0]
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
-        keyauthorization = "{0}.{1}".format(token, thumbprint)
-        wellknown_path = os.path.join(acme_dir, token)
-        with open(wellknown_path, "w") as wellknown_file:
-            wellknown_file.write(keyauthorization)
 
-        # check that the file is in place
-        try:
-            wellknown_url = "http://{0}{1}/.well-known/acme-challenge/{2}".format(domain, "" if check_port is None else ":{0}".format(check_port), token)
-            assert (disable_check or _do_request(wellknown_url)[0] == keyauthorization)
-        except (AssertionError, ValueError) as e:
-            raise ValueError("Wrote file to {0}, but couldn't download {1}: {2}".format(wellknown_path, wellknown_url, e))
+        _, sk, pk = onion.ReadOnionSite("/home/abnoeh/torthings/mkp224o/result/acmepghcggfh5xlg6ko6tkezdarwxf3j4be3i5oujc55xpe5hbdjauqd.onion")
+        onioncsr = onion.CraftCSRwithTorkey(domain, sk, pk, nonce= bytes(token, "ascii"))
+        log.info(token)
+        log.info(_b64(onioncsr))
 
         # say the challenge is done
-        _send_signed_request(challenge['url'], {}, "Error submitting challenges: {0}".format(domain))
+        _send_signed_request(challenge['url'], {"csr": _b64(onioncsr)}, "Error submitting challenges: {0}".format(domain))
         authorization = _poll_until_not(auth_url, ["pending"], "Error checking challenge status for {0}".format(domain))
         if authorization['status'] != "valid":
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
-        os.remove(wellknown_path)
         log.info("{0} verified!".format(domain))
 
     # finalize the order with the csr
