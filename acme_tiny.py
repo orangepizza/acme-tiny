@@ -120,7 +120,13 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
 
     # create a new order
     log.info("Creating new order...")
-    order_payload = {"identifiers": [{"type": "onion-v3", "value": d} for d in domains]}
+    namelist = list()
+    for d in domains:
+        if d.endswith(".onion"):
+            namelist.append({"type": "onion-v3", "value": d})
+        else:
+            namelist.append({"type": "dns", "value": d})
+    order_payload = {"identifiers": namelist}
     order, _, order_headers = _send_signed_request(directory['newOrder'], order_payload, "Error creating new order")
     log.info("Order created!")
 
