@@ -66,7 +66,14 @@ __all__ = \
     'ed25519_verify', 'size_t']
 
 
-
+def create_keypair(seed:bytes):
+    sk = bytearray(64)
+    pk = bytearray(32)
+    cseed = (ctypes.c_ubyte * 32).from_buffer_copy(seed)
+    csk = (ctypes.c_ubyte * 64).from_buffer(sk)
+    cpk = (ctypes.c_ubyte * 32).from_buffer(pk)
+    ed25519_create_keypair(cpk,csk,cseed)
+    return pk,sk
 
 def sign(message:bytes, publickey:bytes, privatekey:bytes):
     pysig = bytearray(64)
