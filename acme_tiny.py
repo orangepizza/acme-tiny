@@ -10,8 +10,7 @@ import onion
 from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD
-#DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
-DEFAULT_DIRECTORY_URL = "https://192.168.1.140:14000/dir"
+DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
