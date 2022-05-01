@@ -2,13 +2,16 @@
 # Copyright Daniel Roesler, under MIT license, see LICENSE at github.com/diafygi/acme-tiny
 import argparse, subprocess, json, os, sys, base64, binascii, time, hashlib, re, copy, textwrap, logging
 import ssl
+import cryptography
+from cryptography.hazmat.primitives.serialization import *
+from cryptography.hazmat.primitives.hashes import SHA256
 
 import onion
 from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD
 #DEFAULT_DIRECTORY_URL = "https://acme-v02.api.letsencrypt.org/directory"
-DEFAULT_DIRECTORY_URL = "https://192.168.1.123:14000/dir"
+DEFAULT_DIRECTORY_URL = "https://192.168.1.140:14000/dir"
 LOGGER = logging.getLogger(__name__)
 LOGGER.addHandler(logging.StreamHandler())
 LOGGER.setLevel(logging.INFO)
@@ -46,7 +49,7 @@ def _do_request(url, data=None, err_msg="Error", depth=0):
         raise ValueError("{0}:\nUrl: {1}\nData: {2}\nResponse Code: {3}\nResponse: {4}".format(err_msg, url, data, code, resp_data))
     return resp_data, code, headers
 
-def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None):
+def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check=False, directory_url=DEFAULT_DIRECTORY_URL, contact=None, check_port=None, tor_dir=None):
     directory, acct_headers, alg, jwk = None, None, None, None # global variables
 
 
@@ -141,17 +144,34 @@ def get_crt(account_key, csr, acme_dir, log=LOGGER, CA=DEFAULT_CA, disable_check
             continue
         log.info("Verifying {0}...".format(domain))
 
-        # find the http-01 challenge and write the challenge file
-        challenge = [c for c in authorization['challenges'] if c['type'] == "onion-v3-csr"][0]
+        # find the currect challage type
+        if domain.endswith("onion"):
+            challenge = [c for c in authorization['challenges'] if c['type'] == "onion-v3-csr"][0]
+        else:
+            challenge = [c for c in authorization['challenges'] if c['type'] == "http-01"][0]
         token = re.sub(r"[^A-Za-z0-9_\-]", "_", challenge['token'])
+        payload = {}
+        if domain.endswith("onion"):
+            # for onion domain prepare challange csr
+            _, sk, pk = onion.ReadOnionSite(tor_dir)
+            onioncsr = onion.CraftCSRwithTorkey(domain, sk, pk, nonce= bytes(token, "ascii"))
+            payload = {"csr": _b64(onioncsr)}
+        else: 
+            # write http-01 challenge file
+            keyauthorization = "{0}.{1}".format(token, thumbprint)
+            wellknown_path = os.path.join(acme_dir, token)
+            with open(wellknown_path, "w") as wellknown_file:
+                wellknown_file.write(keyauthorization)
 
-        _, sk, pk = onion.ReadOnionSite("/home/abnoeh/torthings/mkp224o/result/acmepghcggfh5xlg6ko6tkezdarwxf3j4be3i5oujc55xpe5hbdjauqd.onion")
-        onioncsr = onion.CraftCSRwithTorkey(domain, sk, pk, nonce= bytes(token, "ascii"))
-        log.info(token)
-        log.info(_b64(onioncsr))
+            # check that challange file is in place
+            try:
+                wellknown_url = "http://{0}{1}/.well-known/acme-challenge/{2}".format(domain, "" if check_port is None else ":{0}".format(check_port), token)
+                assert (disable_check or _do_request(wellknown_url)[0] == keyauthorization)
+            except (AssertionError, ValueError) as e:
+                raise ValueError("Wrote file to {0}, but couldn't download {1}: {2}".format(wellknown_path, wellknown_url, e))
 
         # say the challenge is done
-        _send_signed_request(challenge['url'], {"csr": _b64(onioncsr)}, "Error submitting challenges: {0}".format(domain))
+        _send_signed_request(challenge['url'], payload, "Error submitting challenges: {0}".format(domain))
         authorization = _poll_until_not(auth_url, ["pending"], "Error checking challenge status for {0}".format(domain))
         if authorization['status'] != "valid":
             raise ValueError("Challenge did not pass for {0}: {1}".format(domain, authorization))
@@ -192,6 +212,7 @@ def main(argv=None):
     parser.add_argument("--ca", default=DEFAULT_CA, help="DEPRECATED! USE --directory-url INSTEAD!")
     parser.add_argument("--contact", metavar="CONTACT", default=None, nargs="*", help="Contact details (e.g. mailto:aaa@bbb.com) for your account-key")
     parser.add_argument("--check-port", metavar="PORT", default=None, help="what port to use when self-checking the challenge file, default is port 80")
+    parser.add_argument("--tor-dir", default="/var/lib/tor/hidden_service", help="if using tor location of tor hidden service directory")
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
