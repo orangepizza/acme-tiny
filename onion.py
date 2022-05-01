@@ -118,8 +118,3 @@ def OnionNameFromPubkey(key, suffix=True):
 
     return (onion_address + b'.onion' if suffix else onion_address).decode('utf-8', 'replace').lower()
 
-newkey = ed25519.Ed25519PrivateKey.generate()
-tpk, tsk = ced25519.create_keypair(newkey.private_bytes(serialization.Encoding.Raw,serialization.PrivateFormat.Raw, serialization.NoEncryption()))
-name = OnionNameFromPubkey(newkey.public_key())
-testcsr = CraftCSRwithTorkey(name, bytes(tsk), bytes(tpk), b"AAAAAAAAAAAAAAAAAAAAAA")
-
