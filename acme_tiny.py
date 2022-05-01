@@ -5,8 +5,10 @@ import ssl
 import cryptography
 from cryptography.hazmat.primitives.serialization import *
 from cryptography.hazmat.primitives.hashes import SHA256
-
-import onion
+try : 
+    from . import onion
+except ImportError:
+    pass
 from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD

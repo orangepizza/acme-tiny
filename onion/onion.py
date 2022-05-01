@@ -2,6 +2,8 @@
 import base64
 import os
 import hashlib
+
+import cryptography
 from ed25519 import ed25519 as ced25519
 import cryptography.x509 as pyx509
 from cryptography.hazmat.primitives import serialization

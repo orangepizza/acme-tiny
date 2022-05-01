@@ -19,6 +19,7 @@ except ImportError: # pragma: no cover
     from io import StringIO # Python 3
 
 import acme_tiny
+
 from . import utils
 
 # test settings based on environmental variables
