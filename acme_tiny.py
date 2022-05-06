@@ -5,10 +5,7 @@ import ssl
 import cryptography
 from cryptography.hazmat.primitives.serialization import *
 from cryptography.hazmat.primitives.hashes import SHA256
-try : 
-    from . import onion
-except ImportError:
-    pass
+import onion
 from urllib.request import urlopen, Request # Python 3
 
 DEFAULT_CA = "https://acme-v02.api.letsencrypt.org" # DEPRECATED! USE DEFAULT_DIRECTORY_URL INSTEAD
@@ -217,7 +214,7 @@ def main(argv=None):
 
     args = parser.parse_args(argv)
     LOGGER.setLevel(args.quiet or LOGGER.level)
-    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port)
+    signed_crt = get_crt(args.account_key, args.csr, args.acme_dir, log=LOGGER, CA=args.ca, disable_check=args.disable_check, directory_url=args.directory_url, contact=args.contact, check_port=args.check_port, tor_dir=args.tor_dir)
     sys.stdout.write(signed_crt)
 
 if __name__ == "__main__": # pragma: no cover

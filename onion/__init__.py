@@ -4,6 +4,3 @@ from onion.onion import (
     CraftOnionChallangeCSR,
     CraftCSRwithTorkey,
 )
-from onion.ed25519 import (
-    ed25519
-)

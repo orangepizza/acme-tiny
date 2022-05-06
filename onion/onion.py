@@ -2,9 +2,8 @@
 import base64
 import os
 import hashlib
-
+import ctypes
 import cryptography
-import ed25519 as ced25519
 import cryptography.x509 as pyx509
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519
@@ -12,6 +11,54 @@ from cryptography.x509.name import _ASN1Type
 # csr crafting
 from cryptography.x509.oid import NameOID
 
+
+#ed25519 things
+libname = "libed25519.so"
+libpath = os.path.dirname(__file__) + os.path.sep + "ed25519" + os.path.sep + libname
+
+_libraries = {}
+_libraries['libed25519.so'] = ctypes.CDLL(libpath)
+c_int128 = ctypes.c_ubyte*16
+c_uint128 = c_int128
+void = None
+if ctypes.sizeof(ctypes.c_longdouble) == 16:
+    c_long_double_t = ctypes.c_longdouble
+else:
+    c_long_double_t = ctypes.c_ubyte*16
+
+
+ed25519_create_keypair = _libraries['libed25519.so'].ed25519_create_keypair
+ed25519_create_keypair.restype = None
+ed25519_create_keypair.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte)]
+size_t = ctypes.c_uint64
+ed25519_sign = _libraries['libed25519.so'].ed25519_sign
+ed25519_sign.restype = None
+ed25519_sign.argtypes = [ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte), size_t, ctypes.POINTER(ctypes.c_ubyte), ctypes.POINTER(ctypes.c_ubyte)]
+__all__ = \
+    ['ed25519_create_keypair', 'ed25519_sign', 'size_t']
+
+
+def _create_keypair(seed:bytes):
+    sk = bytearray(64)
+    pk = bytearray(32)
+    cseed = (ctypes.c_ubyte * 32).from_buffer_copy(seed)
+    csk = (ctypes.c_ubyte * 64).from_buffer(sk)
+    cpk = (ctypes.c_ubyte * 32).from_buffer(pk)
+    ed25519_create_keypair(cpk,csk,cseed)
+    return pk,sk
+
+def _sign(message:bytes, publickey:bytes, privatekey:bytes):
+    pysig = bytearray(64)
+    csig = (ctypes.c_ubyte * 64).from_buffer(pysig)
+    cmessage  = (ctypes.c_ubyte * len(message)).from_buffer_copy(message)
+    cpub = (ctypes.c_ubyte * 32).from_buffer_copy(publickey)
+    cpriv = (ctypes.c_ubyte * 64).from_buffer_copy(privatekey)
+    ed25519_sign(csig, cmessage, size_t(len(message)), cpub, cpriv)
+    return pysig
+
+
+
+## now really onion thing
 
 def ReadOnionSite(onionsitefolder="/var/lib/tor/hidden_service"):
     """
@@ -54,7 +101,7 @@ def CraftCSRwithTorkey(name, privkey: bytes, publickey: bytes, nonce: bytes):
     # replace temp key in csr to real key and sig
     # we can just byte replace them this because it's same length
     tbsbyte = tbsbyte.replace(tmppub, derpub)
-    realsig = ced25519.sign(tbsbyte, publickey, privkey)
+    realsig = _sign(tbsbyte, publickey, privkey)
     csrbyte = csrbyte.replace(tmppub, derpub)
     csrbyte = csrbyte.replace(tmpcsr.signature, realsig)
     csr = pyx509.load_der_x509_csr(csrbyte)

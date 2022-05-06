@@ -5,6 +5,7 @@
 # POINTER_SIZE is: 8
 # LONGDOUBLE_SIZE is: 16
 #
+# standalone version for modulize this later
 import ctypes
 import os
 
